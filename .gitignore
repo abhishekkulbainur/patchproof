@@ -1,0 +1,30 @@
+# secrets
+.env
+*.env
+!.env.example
+
+# runtime data (SQLite DB, demo working copy)
+backend/var/
+*.db
+
+# python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# node
+node_modules/
+frontend/dist/
+
+# os / editors
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# local Claude Code session config (machine-specific paths)
+.claude/
+
+# typescript build cache
+*.tsbuildinfo
