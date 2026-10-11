@@ -1,192 +1,194 @@
-# PatchProof — The Verified Fix
+# PatchProof
+### From detected vulnerabilities to independently verified fixes.
 
-> **Security remediation, backed by evidence.**
-> From detected vulnerabilities to independently verified fixes.
+**Security remediation, backed by evidence.**
 
-PatchProof shows a full remediation loop on a deliberately vulnerable demo app:
+PatchProof is a security-remediation prototype that demonstrates how a vulnerability can be detected, reproduced, patched, and independently verified through security and regression testing.
+
+A suggested patch is not automatically a verified fix. PatchProof requires evidence that the original exploit is blocked and legitimate application behaviour continues to work.
+
+---
+
+## The Remediation Workflow
 
 **SCAN → PROVE → PATCH → VERIFY → REGRESSION TEST → EVIDENCE REPORT**
 
-The core rule is that a suggested patch is not a verified fix. PatchProof only reports **Verified** when
-independent, deterministic tests show that the original exploit is now blocked and legitimate behaviour still works.
+Each stage builds on the evidence collected in the previous stage, ending with a server-generated verdict.
 
-> ⚠️ **Controlled prototype.** It scans and tests one bundled, synthetic demo target only. A Verified result
-> applies to that single seeded scenario. It does not certify any application as secure.
+## Key Features
 
----
+- **Deterministic Vulnerability Analysis** — Identifies three seeded security findings using Python AST-based rules.
+- **Exploit Reproduction** — Demonstrates an Insecure Direct Object Reference (IDOR) vulnerability through a real request/response test.
+- **Patch Generation** — Offers predefined remediation templates and an optional AI-generated patch proposal when an API key is configured.
+- **Human-Approved Changes** — Requires explicit review and approval before applying a patch to the working copy.
+- **Independent Verification** — Executes security and regression tests in a separate Python subprocess.
+- **Evidence-Based Verdicts** — Determines the final result on the server using test outcomes, reproduction history, patch approval and file integrity.
+- **Downloadable Evidence** — Provides JSON and printable HTML reports.
+- **Persistent History** — Stores projects, findings, patches, verification results and activity records in SQLite.
 
-## What the prototype actually implements
+## How It Works
 
-| Area | Implemented |
+| Stage | What Happens |
 |---|---|
-| Demo target | `backend/demo_target/original/document_portal.py`: a framework-free “Document Portal” with synthetic users Alice and Bob and one seeded IDOR flaw in `get_document()`. |
-| Scan | Deterministic **demo analysis**: three AST rules (`backend/app/services/scanner.py`). It finds the IDOR (High, CWE-639), a stack trace returned in error responses (Medium, CWE-209) and a hard-coded `DEBUG = True` (Low, CWE-489). Each scan re-reads the working copy, so after a correct patch the IDOR is no longer flagged. |
-| Prove | A real request/response test (`SEC-01`): Bob's session asks for Alice's `doc-1041`. Before the fix it returns HTTP 200 with her document. A control test (`SEC-02`) confirms the app otherwise works. |
-| Patch | Two **demo patch templates** (no AI): a correct server-side ownership check, plus a deliberately flawed one that trusts a client header (used to demo a **Failed** verdict). An optional **AI proposal** is available when an API key is configured. Its output is validated, limited to changing `get_document()` only, shown as a diff, and must pass the same tests. |
-| Apply | Needs explicit review and approval first. The patch is written to a working copy under `backend/var/workspace/`. The pristine original is never modified. The patch's SHA-256 values are recorded. |
-| Verify + regression | 3 security tests (ID swap, forged identity header, owner access) and 5 regression tests (second-owner access, reverse cross-user read, missing ID, list endpoint, unauthenticated request). They run in a separate `python -I` subprocess with a timeout. |
-| Verdict | Computed only on the server, in `backend/app/services/verdict.py`. The frontend just renders it. |
-| Evidence report | Built from saved run data. Viewable in the UI and downloadable as **JSON** and as a **printable HTML** page (use “Print / save as PDF” in the browser). |
-| Persistence | SQLite tables: `projects`, `scan_runs`, `findings`, `patches`, `verification_runs`, `test_results`, `activity_events`. The demo project is seeded once. History survives restarts and resets. |
+| 01 — Scan | Analyse the bundled demo application and record security findings. |
+| 02 — Prove | Reproduce the seeded vulnerability and capture the result. |
+| 03 — Patch | Generate a proposed fix and review the code diff. |
+| 04 — Approve | Explicitly approve the proposed change before applying it. |
+| 05 — Verify | Execute security tests against the patched working copy. |
+| 06 — Test | Run regression tests to ensure legitimate functionality remains intact. |
+| 07 — Report | Generate an evidence report containing the recorded results. |
 
-### Verdict rules (`verdict.py`)
+## Verification Verdicts
 
-- **Verified**: all of the following hold:
-  - the vulnerability was reproduced in this demo cycle against the exact code the patch was written for;
-  - the approved patch is applied;
-  - the tested file's SHA-256 matches the patch;
-  - all 8 required tests pass.
-- **Failed**: any required security or regression assertion fails.
-- **Inconclusive**: a test is missing, errored or timed out; there was no prior reproduction; or the tested code doesn't match the approved patch.
-- **Pending**: the workflow has no final verdict yet.
+**Verified** — The vulnerability was reproduced, the approved patch was applied, the tested file matches the approved patch's SHA-256 hash, and all eight required tests pass.
 
----
+**Failed** — At least one required security or regression assertion fails.
 
-## Architecture
+**Inconclusive** — Verification cannot establish a reliable result because of missing tests, errors, timeouts, absent reproduction evidence or an integrity mismatch.
 
-```
-patchproof/
-├── backend/                     Python 3.11+ · FastAPI · SQLite
-│   ├── app/
-│   │   ├── main.py              HTTP routes (thin)
-│   │   ├── config.py            env/.env settings (API key stays server-side)
-│   │   ├── db.py                schema, seeding, helpers
-│   │   └── services/
-│   │       ├── scanner.py       deterministic AST demo analysis
-│   │       ├── runner.py        subprocess test execution (timeout, minimal env)
-│   │       ├── patcher.py       demo templates + optional validated AI proposal
-│   │       ├── verdict.py       ALL verdict logic
-│   │       ├── workflow.py      state transitions & preconditions
-│   │       └── report.py        JSON + printable HTML report from saved data
-│   ├── demo_target/
-│   │   ├── original/document_portal.py   pristine vulnerable baseline
-│   │   └── harness.py           security + regression tests (runs in child process)
-│   ├── tests/                   pytest: verdict unit tests + end-to-end IDOR flow
-│   └── var/                     (git-ignored) patchproof.db + workspace copy
-└── frontend/                    React 18 · TypeScript · Vite · Tailwind CSS · lucide-react
-    └── src/
-        ├── api.ts, types.ts     typed API client
-        ├── lib/                 data hooks, toasts, formatting
-        ├── components/          Shell, RemediationWorkspace, DiffView, TestResults,
-        │                        FindingsTable, AuthorizationTraceBackground, …
-        └── pages/               Overview, Demo, Projects, Findings, FindingDetail,
-                                 Runs, RunDetail, Reports, Settings
-```
+**Pending** — The workflow has not reached a final verdict.
 
-The Vite dev server proxies `/api` to `127.0.0.1:8000`, so the browser only talks to one origin.
+## Technology Stack
 
----
+| Layer | Technologies |
+|---|---|
+| Frontend | React 18, TypeScript, Vite, Tailwind CSS |
+| Backend | Python 3.11+, FastAPI |
+| Database | SQLite |
+| Security Analysis | Python AST-based rules |
+| Verification | Pytest, isolated Python subprocess |
+| Reporting | JSON, printable HTML |
+| Optional AI | OpenAI-compatible chat-completions API |
 
-## Prerequisites
+## Getting Started
 
-- Python **3.11+** (developed on 3.12)
-- Node.js **18+** (developed on 24) and npm
+### Prerequisites
 
-## Install & run
+- Python 3.11 or later
+- Node.js 18 or later
+- npm
 
-**Windows (PowerShell), from the repo root:**
+### Windows — Quick Setup
+
+Run the following commands from the project root in PowerShell.
+
+**1. Install dependencies**
 
 ```powershell
-.\setup.ps1            # creates backend/.venv, installs deps, copies .env.example -> .env, npm install
-.\start-backend.ps1    # terminal 1 -> http://127.0.0.1:8000
-.\start-frontend.ps1   # terminal 2 -> http://localhost:5173
+.\setup.ps1
 ```
 
-**Manual / macOS / Linux:**
+**2. Start the backend**
 
-```bash
-# backend
-cd backend
-python -m venv .venv
-source .venv/bin/activate          # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
-cp .env.example .env               # optional
-uvicorn app.main:app --host 127.0.0.1 --port 8000
+Open a terminal:
 
-# frontend (second terminal)
+```powershell
+.\start-backend.ps1
+```
+
+**3. Start the frontend**
+
+Open a second terminal:
+
+```powershell
+.\start-frontend.ps1
+```
+
+**4. Open PatchProof**
+
+- Frontend: http://localhost:5173
+- Backend health check: http://127.0.0.1:8000/api/health
+
+## Run the Demonstration
+
+1. Open the Overview page.
+2. Select **Run demo workflow**.
+3. Scan the bundled Document Portal.
+4. Reproduce the seeded IDOR vulnerability.
+5. Generate a patch and review its diff.
+6. Approve and apply the patch.
+7. Run security verification and regression tests.
+8. Review the final verdict and download the evidence report.
+
+To demonstrate a failed remediation, reset the demo and choose the deliberately flawed patch template that trusts a client-supplied identity header. The additional security test should expose the weakness.
+
+## Optional AI Configuration
+
+PatchProof works without an API key by using its predefined demonstration patches.
+
+To enable AI-generated patch proposals, configure the following variables in `backend/.env`:
+
+```env
+OPENAI_API_KEY=your_api_key
+OPENAI_MODEL=your_model_name
+OPENAI_BASE_URL=https://api.openai.com/v1
+```
+
+The API key remains server-side. AI-generated proposals are restricted to the intended function, displayed for review, and subjected to the same verification workflow.
+
+Do not commit real API keys or other secrets.
+
+## Running Tests
+
+Run backend tests from the `backend` directory:
+
+```powershell
+.venv\Scripts\python -m pytest -q
+```
+
+Build and type-check the frontend:
+
+```powershell
 cd frontend
-npm install
-npm run dev
+npm run build
 ```
 
-Open **http://localhost:5173**. Health check: http://127.0.0.1:8000/api/health
+## Project Structure
 
-## Environment variables (`backend/.env`)
-
-Every variable is optional. See `backend/.env.example`.
-
-| Variable | Purpose |
-|---|---|
-| `OPENAI_API_KEY` | Enables the “AI proposal” patch source. Read only by the server and never sent to the browser. |
-| `OPENAI_MODEL` | Model name to request. Both the key and the model must be set to enable AI. |
-| `OPENAI_BASE_URL` | Any OpenAI-compatible chat-completions endpoint (default `https://api.openai.com/v1`). |
-| `PATCHPROOF_DATA_DIR` | Where the SQLite DB and the workspace live (default `backend/var`). |
-
-### Demo mode without an API key
-
-Without a key everything still works. Patches come from the **pre-authored demo patch templates** and are labelled
-that way in the UI, the database and the reports. The AI option is shown disabled with an explanation. No AI response is faked.
-
-## Running the demo (judge script, ~2 minutes)
-
-1. Click **Run demo workflow** on the Overview page.
-2. **A. Scan project**: three findings are recorded. Steps B–D are for `PP-AUTHZ-001`.
-3. **B. Reproduce vulnerability**: SEC-01 fails, and the response body shows Bob received Alice's contract.
-4. **C. Generate patch** (server-side ownership check) → review the diff → tick *I have reviewed this diff* → **Approve** → **Apply patch to demo**.
-5. **D. Run security verification**: 3/3 security and 5/5 regression tests pass → **Verified**.
-6. **Open evidence report** → download the JSON/HTML or open the printable view.
-
-**Show a Failed verdict:** click **Reset demo**, then scan and reproduce again. This time choose the *“trusts client header (deliberately flawed)”* template.
-It blocks the naive ID swap (SEC-01 passes), but SEC-03 forges the header and still reads Alice's document → **Failed**.
-
-**Reset** restores the original vulnerable code, marks the applied patch as reverted and starts a new demo cycle.
-All earlier runs and reports are kept.
-
-## Tests
-
-```bash
-cd backend
-.venv\Scripts\python -m pytest -q      # Windows
-# .venv/bin/python -m pytest -q        # macOS/Linux
+```text
+patchproof/
+├── backend/
+│   ├── app/
+│   │   ├── main.py
+│   │   ├── config.py
+│   │   ├── db.py
+│   │   └── services/
+│   │       ├── scanner.py
+│   │       ├── runner.py
+│   │       ├── patcher.py
+│   │       ├── verdict.py
+│   │       ├── workflow.py
+│   │       └── report.py
+│   ├── demo_target/
+│   │   ├── original/
+│   │   └── harness.py
+│   ├── tests/
+│   └── var/
+└── frontend/
+    └── src/
+        ├── components/
+        └── pages/
 ```
 
-- `tests/test_verdict.py`: unit tests for every verdict rule (Verified, Failed, missing test, errored test, timeout, no reproduction, patch not applied, hash mismatch, unknown status).
-- `tests/test_idor_flow.py`: end-to-end API tests using the real subprocess harness. They cover:
-  - the full flow to Verified;
-  - the flawed patch → Failed;
-  - verification with no applied patch → 409, and applying without approval → 409;
-  - a patch with no prior reproduction → Inconclusive;
-  - a tampered working copy → Inconclusive;
-  - reset and history retention;
-  - non-verifiable findings rejecting automation;
-  - an AI request with no key configured → 422;
-  - report contents matching the saved run.
+## Scope and Security Limitations
 
-Frontend type-check and build: `cd frontend && npm run build`.
+PatchProof is a controlled prototype, not a production security scanner.
 
-## Design notes
+- Scanning and verification are limited to one bundled synthetic demo application.
+- The automated remediation scenario covers one seeded IDOR vulnerability.
+- Two additional findings are identified for demonstration and manual review.
+- Test execution uses a separate Python subprocess with a restricted environment and timeout, but **does not use container or virtual-machine isolation**.
+- The optional AI patch-generation path has not been fully validated with a configured API key.
+- A Verified result applies only to the specific demonstration scenario and does not certify an entire application as secure.
 
-- Visual style: a light, clean product UI. It uses white rounded cards on a soft multi-colour gradient wash.
-  - Indigo is the brand colour for primary actions. Rose is used only for vulnerabilities and failures, emerald only for passed or verified results, and amber for pending or inconclusive.
-  - Fonts are Plus Jakarta Sans (UI) and JetBrains Mono (code, with ligatures off), bundled via `@fontsource` so the app works offline.
-- Motion: page fade-in transitions, a sliding mobile navigation drawer, smooth expand and collapse on test results, an animated progress stepper, toast slide-ins and loading skeletons. All motion is disabled under `prefers-reduced-motion`.
-- Signature visual: `AuthorizationTraceBackground.tsx` is a **custom-built** SVG diagram of `User → API → Authorization check → Resource`.
-  - Its state comes from backend results: it shows a red leak when the bug is reproduced, the trace stopping at the gate when Verified, and the trace passing through when Failed.
-  - The concept of thin animated line paths was inspired by Aceternity UI's *Background Lines*. No third-party component code was copied, and no animation library is used.
-  - Motion pauses off-screen and in hidden tabs.
+## Roadmap
 
-## Safety boundaries
+- Repository ingestion and broader source-code analysis
+- Additional vulnerability classes and corresponding security tests
+- Container-isolated verification runners
+- Continuous integration integration
+- Expanded evidence collection and reporting
 
-- Only the bundled demo target can be scanned or tested. There is no URL scanning, crawling, code upload or arbitrary code execution.
-- Tests run in a **local Python subprocess** (`python -I`, minimal environment, 15 s timeout). This is **not** a container or VM sandbox.
-- All users, sessions and documents are synthetic. No secrets are stored, and `.env` is git-ignored.
+---
 
-## Known limitations & future work
-
-- There is one automated scenario (IDOR). The two other findings are for display and manual review only.
-- The analyzer is a small rule set written for the demo target's shape, not a general SAST tool.
-- There is no container isolation, no multi-user auth for PatchProof itself, and no PDF export (use the browser's print-to-PDF on the HTML report).
-- The AI path is implemented, but it was not exercised during development because no key was available.
-- Future work: real repository ingestion, more vulnerability classes with matching test generators, container-isolated runners, and CI integration.
-#   p a t c h p r o o f  
- 
+**PatchProof — From detected vulnerabilities to independently verified fixes.**
