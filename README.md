@@ -188,3 +188,5 @@ Frontend type-check and build: `cd frontend && npm run build`.
 - There is no container isolation, no multi-user auth for PatchProof itself, and no PDF export (use the browser's print-to-PDF on the HTML report).
 - The AI path is implemented, but it was not exercised during development because no key was available.
 - Future work: real repository ingestion, more vulnerability classes with matching test generators, container-isolated runners, and CI integration.
+#   p a t c h p r o o f  
+ 
