@@ -21,12 +21,19 @@ def _load_dotenv(path: Path) -> None:
         os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
 
 
+def _default_data_dir() -> Path:
+    configured = os.environ.get("PATCHPROOF_DATA_DIR")
+    if configured:
+        return Path(configured)
+    return Path("/tmp/patchproof") if os.environ.get("VERCEL") else BACKEND_DIR / "var"
+
+
 _load_dotenv(BACKEND_DIR / ".env")
 
 
 @dataclass
 class Settings:
-    data_dir: Path = field(default_factory=lambda: Path(os.environ.get("PATCHPROOF_DATA_DIR", BACKEND_DIR / "var")))
+    data_dir: Path = field(default_factory=_default_data_dir)
     openai_api_key: str = field(default_factory=lambda: os.environ.get("OPENAI_API_KEY", "").strip())
     openai_model: str = field(default_factory=lambda: os.environ.get("OPENAI_MODEL", "").strip())
     openai_base_url: str = field(default_factory=lambda: os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/"))
